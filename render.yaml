@@ -1,17 +1,7 @@
 services:
 - type: web
-  name: cam-relay
+  name: esp32-relay
   env: python
   plan: free
-  buildCommand: |
-    apt-get update -y
-    apt-get install -y ffmpeg
-    pip install -r requirements.txt
+  buildCommand: pip install -r requirements.txt
   startCommand: gunicorn app:app --workers 2 --threads 8 --bind 0.0.0.0:$PORT
-  envVars:
-  - key: RELAY_TOKEN
-    value: changeme
-  - key: YT_URL
-    value: rtmp://a.rtmp.youtube.com/live2
-  - key: YT_KEY
-    value: 9b82-ukfh-atk7-qr76-50hs9b82-ukfh-atk7-qr76-50hs

@@ -1,55 +1,29 @@
-import os, subprocess, threading, queue, time
-from flask import Flask, request, Response, abort
+from flask import Flask, request, render_template_string
 
 app = Flask(__name__)
+latest_ip = "192.168.4.1"  # default if not registered
 
-# ──────  settings  ──────
-TOKEN   = os.getenv("RELAY_TOKEN", "changeme")
-YT_URL  = os.getenv("YT_URL", "rtmp://a.rtmp.youtube.com/live2")
-YT_KEY  = os.getenv("YT_KEY", "9b82-ukfh-atk7-qr76-50hs9b82-ukfh-atk7-qr76-50hs")
-FPS     = 5
+@app.route("/register")
+def register():
+    global latest_ip
+    ip = request.args.get("ip")
+    if ip:
+        latest_ip = ip
+        print(f"[REGISTERED] ESP32 IP: {ip}")
+    return "OK"
 
-# ──────  JPEG queue & FFmpeg ──────
-jpeg_q = queue.Queue(maxsize=20)
-
-def ffmpeg_worker():
-    cmd = [
-        "ffmpeg", "-hide_banner", "-loglevel", "error",
-        "-re", "-f", "mjpeg", "-r", str(FPS), "-i", "-",
-        "-vf", "format=yuv420p",
-        "-c:v", "libx264", "-preset", "veryfast", "-tune", "zerolatency",
-        "-g", str(FPS*10), "-b:v", "1M",
-        "-f", "flv", f"{YT_URL}/{YT_KEY}"
-    ]
-    print("[FFmpeg worker] Starting FFmpeg stream to YouTube...")
-    proc = subprocess.Popen(cmd, stdin=subprocess.PIPE)
-    while True:
-        frame = jpeg_q.get()
-        if frame is None: break
-        try:
-            proc.stdin.write(frame)
-        except BrokenPipeError:
-            print("[FFmpeg worker] Broken pipe – restarting...")
-            proc.kill()
-            time.sleep(2)
-            return ffmpeg_worker()
-
-threading.Thread(target=ffmpeg_worker, daemon=True).start()
-
-@app.route("/upload", methods=["POST"])
-def upload():
-    if request.args.get("token") != TOKEN:
-        abort(401)
-    data = request.get_data()
-    if not data or data[:2] != b'\xff\xd8':
-        abort(400)
-    try:
-        jpeg_q.put_nowait(data)
-    except queue.Full:
-        jpeg_q.get_nowait()
-        jpeg_q.put_nowait(data)
-    return "OK", 200
+@app.route("/view")
+def view():
+    stream_url = f"http://{latest_ip}/stream"
+    return render_template_string(f"""
+    <!doctype html><html><head><title>ESP32 Camera</title></head>
+    <body style='background:#111;color:#eee;text-align:center'>
+    <h2>ESP32 Live Stream</h2>
+    <img src='{stream_url}' width='640' style='border:2px solid #ccc'><br>
+    <p>Streaming from <b>{stream_url}</b></p>
+    </body></html>
+    """)
 
 @app.route("/")
 def index():
-    return "<h2>ESP32 YouTube Relay is Running</h2>"
+    return "<h3>Use /view to access camera viewer</h3>"
