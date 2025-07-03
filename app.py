@@ -21,9 +21,13 @@ img{max-width:96%;border:2px solid #666;margin-top:10px}</style>
 function ask(){fetch('/request?token={{flag}}')}
 setInterval(()=>{document.getElementById('img').src='/latest?'+Date.now()},50);
 </script></head><body>
-<h2>ESP32 Snapshot (pull-to-refresh)</h2>
-<button onclick="ask()">Update Frame</button><br>
+<h2>BUBT VTS+</h2>
 <img id="img" src="/latest"><br>
+<div style="font-family:sans-serif; font-size:16px;">
+  🛠 <strong>Developed by</strong><br>
+  👨‍💻 Rakib Hasan  👨‍💻 Sahadat Sani  👨‍🔬 A B M Shawkat Ali
+</div>
+
 </body></html>
 
 
