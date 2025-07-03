@@ -13,7 +13,7 @@ need_frame   = False
 # ───────── HTML dashboard ─────────
 HTML = """
 <!doctype html><html><head><meta charset='utf-8'>
-<title>ESP32 Snapshot Dashboard</title>
+<title>BUBT VTS+</title>
 <style>body{background:#111;color:#eee;text-align:center;font-family:sans-serif}
 button{padding:.6em 1.4em;font-size:1.1em;margin-top:8px}
 img{max-width:96%;border:2px solid #666;margin-top:10px}</style>
