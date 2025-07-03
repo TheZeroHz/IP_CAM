@@ -1,91 +1,55 @@
-"""
-ESP32-S3 camera relay
-=====================
-Receives JPEG frames from one (or many) ESP32 uploads and
-re-streams them to browsers as multipart-MJPEG.
-
-Author : BUBT Researcher
-Date   : July 2025
-"""
-
-from flask import Flask, request, Response, abort, render_template_string
-import threading, time, os
+import os, subprocess, threading, queue, time
+from flask import Flask, request, Response, abort
 
 app = Flask(__name__)
 
-# ───── configurable via Render's Environment settings ─────
-TOKEN   = os.getenv("RELAY_TOKEN",  "changeme")  # same token in ESP32 sketch
-TIMEOUT = float(os.getenv("FRAME_TIMEOUT",  "10"))  # seconds before frame deemed stale
+# ──────  settings  ──────
+TOKEN   = os.getenv("RELAY_TOKEN", "changeme")
+YT_URL  = os.getenv("YT_URL", "rtmp://a.rtmp.youtube.com/live2")
+YT_KEY  = os.getenv("YT_KEY", "9b82-ukfh-atk7-qr76-50hs9b82-ukfh-atk7-qr76-50hs")
+FPS     = 5
 
-# ───── shared state ─────
-frame_lock = threading.Lock()
-latest_jpeg: bytes = b''
-last_ts:     float = 0.0
+# ──────  JPEG queue & FFmpeg ──────
+jpeg_q = queue.Queue(maxsize=20)
 
-# ───── minimal viewer page ─────
-PAGE_HTML = """
-<!doctype html><html><head><meta charset='utf-8'>
-<title>ESP32 Relay Stream</title>
-<style>
-body{margin:0;background:#111;color:#eee;text-align:center;font-family:sans-serif}
-img{max-width:96%;border:2px solid #444;margin-top:1em}
-</style></head><body>
-<h2>Cloud Relay Stream</h2>
-<img src="/stream">
-</body></html>"""
+def ffmpeg_worker():
+    cmd = [
+        "ffmpeg", "-hide_banner", "-loglevel", "error",
+        "-re", "-f", "mjpeg", "-r", str(FPS), "-i", "-",
+        "-vf", "format=yuv420p",
+        "-c:v", "libx264", "-preset", "veryfast", "-tune", "zerolatency",
+        "-g", str(FPS*10), "-b:v", "1M",
+        "-f", "flv", f"{YT_URL}/{YT_KEY}"
+    ]
+    print("[FFmpeg worker] Starting FFmpeg stream to YouTube...")
+    proc = subprocess.Popen(cmd, stdin=subprocess.PIPE)
+    while True:
+        frame = jpeg_q.get()
+        if frame is None: break
+        try:
+            proc.stdin.write(frame)
+        except BrokenPipeError:
+            print("[FFmpeg worker] Broken pipe – restarting...")
+            proc.kill()
+            time.sleep(2)
+            return ffmpeg_worker()
 
+threading.Thread(target=ffmpeg_worker, daemon=True).start()
 
-# ──────────────────────────────────────────────────────────
-#  /upload  – ESP32 POSTs JPEG here
-# ──────────────────────────────────────────────────────────
 @app.route("/upload", methods=["POST"])
 def upload():
     if request.args.get("token") != TOKEN:
-        abort(401, description="Bad token")
+        abort(401)
     data = request.get_data()
-    if not data or data[:2] != b'\xff\xd8':        # crude JPEG signature
-        abort(400, description="No JPEG")
-
-    global latest_jpeg, last_ts
-    with frame_lock:
-        latest_jpeg = data
-        last_ts     = time.time()
-
+    if not data or data[:2] != b'\xff\xd8':
+        abort(400)
+    try:
+        jpeg_q.put_nowait(data)
+    except queue.Full:
+        jpeg_q.get_nowait()
+        jpeg_q.put_nowait(data)
     return "OK", 200
 
-
-# ──────────────────────────────────────────────────────────
-#  /stream  – Browser MJPEG endpoint
-# ──────────────────────────────────────────────────────────
-@app.route("/stream")
-def stream():
-    def generator():
-        boundary = b"--frame\r\n"
-        while True:
-            with frame_lock:
-                frame = latest_jpeg
-                age   = time.time() - last_ts
-            if frame and age < TIMEOUT:
-                yield boundary
-                yield b"Content-Type: image/jpeg\r\n"
-                yield f"Content-Length: {len(frame)}\r\n\r\n".encode()
-                yield frame + b"\r\n"
-            else:
-                # no fresh frame – slow down polling
-                time.sleep(0.25)
-
-    return Response(generator(),
-                    mimetype="multipart/x-mixed-replace; boundary=frame")
-
-
-# ──────────────────────────────────────────────────────────
-#  /          – viewer HTML
-# ──────────────────────────────────────────────────────────
 @app.route("/")
 def index():
-    return render_template_string(PAGE_HTML)
-
-
-# ─── local dev ───
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=8000, threaded=True)
+    return "<h2>ESP32 YouTube Relay is Running</h2>"

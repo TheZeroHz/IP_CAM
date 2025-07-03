@@ -2,12 +2,16 @@ services:
 - type: web
   name: cam-relay
   env: python
-  plan: free         # move to ‘starter’ if you need >100 GB egress
-  buildCommand: pip install -r requirements.txt
+  plan: free
+  buildCommand: |
+    apt-get update -y
+    apt-get install -y ffmpeg
+    pip install -r requirements.txt
   startCommand: gunicorn app:app --workers 2 --threads 8 --bind 0.0.0.0:$PORT
-  autoDeploy: true
   envVars:
-  - key: RELAY_TOKEN        # set via Render dashboard after first deploy
-    sync: false             # don’t commit secrets
-  - key: FRAME_TIMEOUT
-    value: "10"
+  - key: RELAY_TOKEN
+    value: changeme
+  - key: YT_URL
+    value: rtmp://a.rtmp.youtube.com/live2
+  - key: YT_KEY
+    value: 9b82-ukfh-atk7-qr76-50hs9b82-ukfh-atk7-qr76-50hs
