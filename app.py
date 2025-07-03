@@ -1,79 +1,69 @@
-# ──────────────────────────────────────────────────────────────
-#  Flask MJPEG relay – multi-thread, zero-refresh viewer
-#  Author: BUBT Researcher • July 2025
-# ──────────────────────────────────────────────────────────────
 from flask import Flask, request, Response, render_template_string, abort
 import threading, time, os
 
 app = Flask(__name__)
 
-# ───── settings ─────
-TOKEN = os.getenv("UPLOAD_TOKEN", "changeme")   # shared secret with ESP32
-BOUND = b"--frame\r\n"                          # multipart boundary
-TIMEOUT = 15                                    # seconds before client drops
+UPLOAD_TOKEN = os.getenv("UPLOAD_TOKEN", "changeme")
+FLAG_TOKEN   = os.getenv("FLAG_TOKEN",   "changeme")  # same for ESP & dashboard
 
-# ───── shared state ─────
-cond   = threading.Condition()
-latest = b""            # newest JPEG bytes
-stamp  = time.time()    # arrival time of latest frame
+frame_lock   = threading.Lock()
+latest_jpeg  = b""
+need_frame   = False           # <— pull flag
 
-# ──────────────────────────────────────────────────────────────
-#  ESP32  →  POST /upload   (Content-Type: image/jpeg)
-# ──────────────────────────────────────────────────────────────
+# ───────── HTML dashboard ─────────
+HTML = """
+<!doctype html><html><head><meta charset='utf-8'><title>ESP32 Snapshot</title>
+<style>body{background:#111;color:#eee;text-align:center;font-family:sans-serif}
+img{max-width:96%;border:2px solid #666;margin-top:10px}
+button{padding:.6em 1.2em;font-size:1.1em;margin-top:8px}</style>
+<script>
+function update(){fetch('/request?token={{t}}').then(()=>console.log('asked'))}
+setInterval(()=>{document.getElementById('snap').src='/latest?'+Date.now()},1000);
+</script></head><body>
+<h2>ESP32 Snapshot Dashboard</h2>
+<button onclick="update()">Update Frame</button><br>
+<img id="snap" src="/latest"><br>
+</body></html>
+"""
+
+# ───────── ESP uploads here ─────────
 @app.route("/upload", methods=["POST"])
 def upload():
-    if request.args.get("token") != TOKEN:
-        abort(401, "bad token")
-
+    if request.args.get("token") != UPLOAD_TOKEN:
+        abort(401)
     data = request.get_data()
-    if not data or data[:2] != b"\xff\xd8":     # crude JPEG check
+    if not data or data[:2] != b'\xff\xd8':
         abort(400, "no jpeg")
-
-    global latest, stamp
-    with cond:
-        latest, stamp = data, time.time()
-        cond.notify_all()                       # wake every viewer
-
+    global latest_jpeg, need_frame
+    with frame_lock:
+        latest_jpeg = data
+        need_frame  = False        # reset flag after success
     return "OK", 200
 
+# ───────── ESP polls this flag ─────────
+@app.route("/flag")
+def flag():
+    if request.args.get("token") != FLAG_TOKEN:
+        abort(401)
+    return ("1" if need_frame else "0"), 200
 
-# ──────────────────────────────────────────────────────────────
-#  Browser  →  GET /stream   (multipart MJPEG)
-# ──────────────────────────────────────────────────────────────
-@app.route("/stream")
-def stream():
-    def gen():
-        last = 0        # last sent timestamp
-        while True:
-            with cond:
-                cond.wait_for(lambda: stamp != last, timeout=TIMEOUT)
-                if time.time() - stamp > TIMEOUT:
-                    break                    # no frames for a while → quit
-                frame = latest               # copy ref under lock
-                last  = stamp
-            yield BOUND
-            yield b"Content-Type: image/jpeg\r\n"
-            yield f"Content-Length: {len(frame)}\r\n\r\n".encode()
-            yield frame + b"\r\n"
-    return Response(gen(),
-                    mimetype="multipart/x-mixed-replace; boundary=frame")
+# ───────── Dashboard button hits /request ─────────
+@app.route("/request")
+def req():
+    if request.args.get("token") != FLAG_TOKEN:
+        abort(401)
+    global need_frame
+    need_frame = True
+    return "OK", 200
 
+# ───────── Serve latest image ─────────
+@app.route("/latest")
+def latest():
+    if not latest_jpeg:
+        abort(404, "no image yet")
+    return Response(latest_jpeg, mimetype="image/jpeg")
 
-# ──────────────────────────────────────────────────────────────
-#  Simple viewer  →  GET /
-# ──────────────────────────────────────────────────────────────
+# ───────── Dashboard page ─────────
 @app.route("/")
 def index():
-    return render_template_string("""
-<!doctype html><html><head><meta charset="utf-8">
-<title>ESP32 Live Stream</title>
-<style>body{margin:0;background:#111;color:#eee;text-align:center;font-family:sans-serif}
-img{max-width:96%;border:2px solid #444}</style></head><body>
-<h2>ESP32 Live Stream</h2>
-<img src="/stream">
-</body></html>
-""")
-
-
-if __name__ == "__main__":                     # local test
-    app.run("0.0.0.0", 8000, threaded=True)
+    return render_template_string(HTML, t=FLAG_TOKEN)
