@@ -1,0 +1,13 @@
+services:
+- type: web
+  name: cam-relay
+  env: python
+  plan: free         # move to ‘starter’ if you need >100 GB egress
+  buildCommand: pip install -r requirements.txt
+  startCommand: gunicorn app:app --workers 2 --threads 8 --bind 0.0.0.0:$PORT
+  autoDeploy: true
+  envVars:
+  - key: RELAY_TOKEN        # set via Render dashboard after first deploy
+    sync: false             # don’t commit secrets
+  - key: FRAME_TIMEOUT
+    value: "10"
