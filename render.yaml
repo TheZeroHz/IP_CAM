@@ -10,3 +10,5 @@ services:
       value: changeme         # ← must match ESP32 sketch
     - key: FLAG_TOKEN
       value: changeme         # ← must match ESP32 + dashboard.js
+    - key: STREAM_TOKEN
+      value: changeme
