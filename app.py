@@ -16,13 +16,17 @@ HTML = """
 <title>BUBT VTS+</title>
 <style>body{background:#111;color:#eee;text-align:center;font-family:sans-serif}
 button{padding:.6em 1.4em;font-size:1.1em;margin-top:8px}
-img{max-width:96%;border:2px solid #666;margin-top:10px}</style>
+img{max-width:96%;border:2px solid #666;margin-top:10px}
+.rotated {
+    transform: rotate(90deg);
+}
+</style>
 <script>
 function ask(){fetch('/request?token={{flag}}')}
 setInterval(()=>{document.getElementById('img').src='/latest?'+Date.now()},100);
 </script></head><body>
 <h2>BUBT VTS+</h2>
-<img id="img" src="/latest"><br>
+<img id="img" class="rotated" src="/latest"><br>
 <div style="font-family:sans-serif; font-size:16px;">
   🛠 <strong>Developed by</strong><br>
   👨‍💻 Rakib Hasan  👨‍💻 Sahadat Sani  👨‍🔬 A B M Shawkat Ali
